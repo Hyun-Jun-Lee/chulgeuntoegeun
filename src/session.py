@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy_utils import database_exists, create_database
 
-from .models import Base, WorkDay
+from models import Base, WorkDay
 
 DATABASE_URL = "sqlite:///./days.db"
 
