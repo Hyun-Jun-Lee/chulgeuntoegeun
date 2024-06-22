@@ -12,6 +12,6 @@ class WorkDay(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     date: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
-    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    start_time: Mapped[time] = mapped_column(Time, nullable=True)
     end_time: Mapped[time] = mapped_column(Time, nullable=True)
     memo: Mapped[str] = mapped_column(String(255), nullable=True)
