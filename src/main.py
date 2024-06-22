@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QTimeEdit,
 )
-from datetime import date
+from datetime import date, datetime
 from session import get_db
 from models import WorkDay
 
@@ -116,6 +116,15 @@ class OnDuty(QWidget):
         self.time_label_start.setText("출근 시간: ")
         self.time_label_end.setText("퇴근 시간: ")
 
+        selected_date_str = self.calendar.selectedDate().toPyDate().strftime("%Y-%m-%d")
+        selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d")
+        with get_db() as db:
+            workday = (
+                db.query(WorkDay).filter(WorkDay.date.like(f"{selected_date}%")).first()
+            )
+            db.delete(workday)
+            db.commit()
+
     def show_selected_date_work_time(self, date):
         """
         선택한 날짜의 출 퇴근 시간
@@ -153,39 +162,47 @@ class OnDuty(QWidget):
                     f"퇴근 시간: {end_time.strftime('%H:%M') if end_time else ''}"
                 )
             else:
-                self.start_time_edit.setEnabled(False)
-                self.end_time_edit.setEnabled(False)
-                self.save_button.setEnabled(False)
+                self.start_time_edit.setEnabled(True)
+                self.end_time_edit.setEnabled(True)
+                self.save_button.setEnabled(True)
                 self.time_label_start.setText(f"출근 시간: ")
                 self.time_label_end.setText(f"퇴근 시간: ")
+
+                # self.new_workday = WorkDay(date=date.today())
 
     def save_work_time(self):
         """
         시간 수정 반영
         """
-        selected_date = self.calendar.selectedDate().toPyDate().strftime("%Y-%m-%d")
+        selected_date_str = self.calendar.selectedDate().toPyDate().strftime("%Y-%m-%d")
+        selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d")
         with get_db() as db:
             workday = (
                 db.query(WorkDay).filter(WorkDay.date.like(f"{selected_date}%")).first()
             )
-            if workday:
+
+            if workday is None:
+                workday = WorkDay(
+                    date=selected_date,
+                    start_time=self.start_time_edit.time().toPyTime(),
+                    end_time=self.end_time_edit.time().toPyTime(),
+                )
+                db.add(workday)
+            else:
+
                 workday.start_time = self.start_time_edit.time().toPyTime()
                 workday.end_time = self.end_time_edit.time().toPyTime()
-                start_time = workday.start_time
-                end_time = workday.end_time
-                db.commit()
 
-                self.time_label_start.setText(
-                    f"출근 시간: {start_time.strftime('%H:%M') if start_time else ''}"
-                )
-                self.time_label_end.setText(
-                    f"퇴근 시간: {end_time.strftime('%H:%M') if end_time else ''}"
-                )
-            else:
-                self.start_time = None
-                self.end_time = None
-                self.time_label_start.setText(f"출근 시간: ")
-                self.time_label_end.setText(f"퇴근 시간: ")
+            db.commit()
+            start_time = workday.start_time
+            end_time = workday.end_time
+
+            self.time_label_start.setText(
+                f"출근 시간: {start_time.strftime('%H:%M') if start_time else ''}"
+            )
+            self.time_label_end.setText(
+                f"퇴근 시간: {end_time.strftime('%H:%M') if end_time else ''}"
+            )
 
 
 if __name__ == "__main__":
