@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QCalendarWidget,
     QHBoxLayout,
+    QTimeEdit,
 )
 from datetime import date
 from session import get_db
@@ -43,8 +44,12 @@ class OnDuty(QWidget):
         self.reset_button = QPushButton("Reset", self)
         self.reset_button.clicked.connect(self.reset_work)
 
-        self.time_label = QLabel("출근 시간: ", self)
-        self.time_label.setAlignment(Qt.AlignCenter)
+        self.time_label_start = QLabel("출근 시간: ", self)
+        self.time_label_end = QLabel("퇴근 시간: ", self)
+
+        time_label_layout = QVBoxLayout()  # 레이블 수직 배치
+        time_label_layout.addWidget(self.time_label_start)
+        time_label_layout.addWidget(self.time_label_end)
 
         # Calendar 위젯 추가
         self.calendar = QCalendarWidget(self)
@@ -54,11 +59,26 @@ class OnDuty(QWidget):
         top_layout.addWidget(self.date_label)
         top_layout.addWidget(self.reset_button)
 
+        # 시간 수정 위젯 추가
+        self.start_time_edit = QTimeEdit(self)
+        self.end_time_edit = QTimeEdit(self)
+        self.save_button = QPushButton("저장", self)
+        self.save_button.clicked.connect(self.save_work_time)
+        self.save_button.setEnabled(False)  # 초기에는 저장 버튼 비활성화
+
+        time_edit_layout = QHBoxLayout()
+        time_edit_layout.addWidget(QLabel("출근 시간:", self))
+        time_edit_layout.addWidget(self.start_time_edit)
+        time_edit_layout.addWidget(QLabel("퇴근 시간:", self))
+        time_edit_layout.addWidget(self.end_time_edit)
+
         layout = QVBoxLayout()
         layout.addLayout(top_layout)
         layout.addWidget(self.start_button)
         layout.addWidget(self.end_button)
-        layout.addWidget(self.time_label)
+        layout.addLayout(time_edit_layout)
+        layout.addWidget(self.save_button)
+        layout.addLayout(time_label_layout)
         layout.addWidget(self.calendar)
 
         self.setLayout(layout)
@@ -69,50 +89,103 @@ class OnDuty(QWidget):
                 date=date.today(), start_time=QTime.currentTime().toPyTime()
             )
             db.add(workday)
-            self.start_time = workday.start_time
             db.commit()
             db.refresh(workday)
+            start_time = workday.start_time.strftime("%H:%M")
             self.workday_id = workday.id
 
         self.start_button.setEnabled(False)
         self.end_button.setEnabled(True)
-        self.time_label.setText(f"출근 시간: {self.start_time.strftime('%H:%M:%S')}")
+        self.time_label_start.setText(f"출근 시간: { start_time if start_time else ''}")
 
     def end_work(self):
         with get_db() as db:
             workday = db.query(WorkDay).get(self.workday_id)
             workday.end_time = QTime.currentTime().toPyTime()
-            self.end_time = workday.end_time
+            end_time = workday.end_time.strftime("%H:%M")
             db.commit()
             db.refresh(workday)
 
         self.end_button.setEnabled(False)
-        self.time_label.setText(
-            f"출근 시간: {self.start_time.strftime('%H:%M:%S')}, "
-            f"퇴근 시간: {self.end_time.strftime('%H:%M:%S')}"
-        )
+        self.time_label_end.setText(f"퇴근 시간: {end_time if end_time else ''}")
 
     def reset_work(self):
         self.start_button.setEnabled(True)
         self.end_button.setEnabled(False)
         self.workday_id = None
-        self.time_label.setText("출근 시간: ")
+        self.time_label_start.setText("출근 시간: ")
+        self.time_label_end.setText("퇴근 시간: ")
 
     def show_selected_date_work_time(self, date):
+        """
+        선택한 날짜의 출 퇴근 시간
+        """
         with get_db() as db:
             date_str = date.toPyDate().strftime("%Y-%m-%d")
             workday = (
                 db.query(WorkDay).filter(WorkDay.date.like(f"{date_str}%")).first()
             )
+
             if workday:
-                self.time_label.setText(
-                    f"출근 시간: {workday.start_time.strftime('%H:%M:%S')}, "
-                    f"퇴근 시간: {workday.end_time.strftime('%H:%M:%S') if workday.end_time else ''}"
+                self.start_time_edit.setEnabled(True)
+                self.end_time_edit.setEnabled(True)
+                self.start_time_edit.setTime(
+                    QTime(
+                        workday.start_time.hour,
+                        workday.start_time.minute,
+                    )
+                )  # QTime 생성자에 시, 분, 초 전달
+                self.end_time_edit.setTime(
+                    QTime(
+                        workday.end_time.hour,
+                        workday.end_time.minute,
+                    )
+                    if workday.end_time
+                    else QTime()
+                )
+                self.save_button.setEnabled(True)
+                start_time = workday.start_time
+                end_time = workday.end_time
+                self.time_label_start.setText(
+                    f"출근 시간: {start_time.strftime('%H:%M') if start_time else ''}"
+                )
+                self.time_label_end.setText(
+                    f"퇴근 시간: {end_time.strftime('%H:%M') if end_time else ''}"
                 )
             else:
-                self.time_label.setText(
-                    f"{date.toPyDate()} 날짜의 출퇴근 기록이 없습니다."
+                self.start_time_edit.setEnabled(False)
+                self.end_time_edit.setEnabled(False)
+                self.save_button.setEnabled(False)
+                self.time_label_start.setText(f"출근 시간: ")
+                self.time_label_end.setText(f"퇴근 시간: ")
+
+    def save_work_time(self):
+        """
+        시간 수정 반영
+        """
+        selected_date = self.calendar.selectedDate().toPyDate().strftime("%Y-%m-%d")
+        with get_db() as db:
+            workday = (
+                db.query(WorkDay).filter(WorkDay.date.like(f"{selected_date}%")).first()
+            )
+            if workday:
+                workday.start_time = self.start_time_edit.time().toPyTime()
+                workday.end_time = self.end_time_edit.time().toPyTime()
+                start_time = workday.start_time
+                end_time = workday.end_time
+                db.commit()
+
+                self.time_label_start.setText(
+                    f"출근 시간: {start_time.strftime('%H:%M') if start_time else ''}"
                 )
+                self.time_label_end.setText(
+                    f"퇴근 시간: {end_time.strftime('%H:%M') if end_time else ''}"
+                )
+            else:
+                self.start_time = None
+                self.end_time = None
+                self.time_label_start.setText(f"출근 시간: ")
+                self.time_label_end.setText(f"퇴근 시간: ")
 
 
 if __name__ == "__main__":
